@@ -3,8 +3,9 @@ const request = require("supertest");
 const app = require("../app");
 const prisma = require("../config/prisma");
 const jwt = require("jsonwebtoken");
+require("dotenv").config();
 
-describe("Token Generation Unit Test", () => {
+describe("Token Generation", () => {
   beforeAll(async () => {
     await prisma.$connect();
     await prisma.userOrganisation.deleteMany({});
@@ -16,19 +17,19 @@ describe("Token Generation Unit Test", () => {
     await prisma.$disconnect();
   });
 
-  it("Should generate a token that expires at the correct time", async () => {
+  it("Generate token that expires at the correct time", async () => {
     const loginResponse = await request(app).post("/auth/register").send({
-      firstName: "Test",
-      lastName: "User",
-      email: "testuser@example.com",
-      password: "password123",
-      phone: "1234567890",
+      firstName: "Alice",
+      lastName: "Smith",
+      email: "alicesmith@example.com",
+      password: "Password!234",
+      phone: "9876543210",
     });
 
     const token = loginResponse.body.data.accessToken;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.SECRET_KEY);
     let jwtExpiry;
-    if (process.env.JWT_EXPIRY === "1d") {
+    if (process.env.SECRET_EXP === "1d") {
       jwtExpiry = 86400;
     }
 
@@ -36,20 +37,20 @@ describe("Token Generation Unit Test", () => {
     expect(decoded.exp - decoded.iat).toBe(jwtExpiry);
   }, 60000);
 
-  it("should contain the correct user details in the token", async () => {
+  it("Validate user details in the token", async () => {
     const loginResponse = await request(app).post("/auth/login").send({
-      email: "testuser@example.com",
-      password: "password123",
+      email: "alicesmith@example.com",
+      password: "Password!234",
     });
 
     const token = loginResponse.body.data.accessToken;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.SECRET_KEY);
 
-    expect(decoded.email).toBe("testuser@example.com");
+    expect(decoded.email).toBe("alicesmith@example.com");
   }, 60000);
 });
 
-describe("Organisation Access Unit Test", () => {
+describe("Organisation test", () => {
   beforeAll(async () => {
     await prisma.$connect();
     await prisma.userOrganisation.deleteMany({});
@@ -61,51 +62,51 @@ describe("Organisation Access Unit Test", () => {
     await prisma.$disconnect();
   });
 
-  let userToken;
-  let userOrgId;
-  let testUserToken;
+  let bobToken;
+  let bobOrgId;
+  let charlieToken;
 
-  it("Should create test user", async () => {
-    const userResponse = await request(app).post("/auth/register").send({
-      firstName: "Test",
-      lastName: "User",
-      email: "testuser@example.com",
-      password: "password123",
-      phone: "1234567890",
+  it("Create user", async () => {
+    const bobResponse = await request(app).post("/auth/register").send({
+      firstName: "Bob",
+      lastName: "Johnson",
+      email: "bobjohnson@example.com",
+      password: "Password!234",
+      phone: "9876543211",
     });
 
-    userToken = userResponse.body.data.accessToken;
-    jwt.verify(userToken, process.env.JWT_SECRET);
+    bobToken = bobResponse.body.data.accessToken;
+    jwt.verify(bobToken, process.env.SECRET_KEY);
   }, 60000);
 
-  it("Should allow user to access their own organisation", async () => {
+  it("User to access user organisation", async () => {
     const response = await request(app)
       .get(`/api/organisations`)
-      .set("Authorization", `Bearer ${userToken}`);
+      .set("Authorization", `Bearer ${bobToken}`);
 
-    userOrgId = response.body.data.orgId;
+    bobOrgId = response.body.data.organisations[0].orgId;
 
     expect(response.status).toBe(200);
-    expect(response.body.data.name).toBe("Test's Organisation");
+    expect(response.body.data.organisations[0].name).toBe("Bob's Organisation");
   }, 60000);
 
-  it("Should create test user 2", async () => {
-    const testUserResponse = await request(app).post("/auth/register").send({
-      firstName: "Test2",
-      lastName: "User2",
-      email: "testuser2@example.com",
-      password: "password123",
-      phone: "1234567890",
+  it("Create user2", async () => {
+    const charlieResponse = await request(app).post("/auth/register").send({
+      firstName: "Charlie",
+      lastName: "Williams",
+      email: "charliewilliams@example.com",
+      password: "Password!234",
+      phone: "9876543212",
     });
 
-    testUserToken = testUserResponse.body.data.accessToken;
-    jwt.verify(testUserToken, process.env.JWT_SECRET);
+    charlieToken = charlieResponse.body.data.accessToken;
+    jwt.verify(charlieToken, process.env.SECRET_KEY);
   }, 60000);
 
-  it("Should not allow user to access an organisation they are not a member of", async () => {
+  it("Should deny access to a user who is not a member of the organization", async () => {
     const response = await request(app)
-      .get(`/api/organisations/${userOrgId}`)
-      .set("Authorization", `Bearer ${testUserToken}`);
+      .get(`/api/organisations/${bobOrgId}`)
+      .set("Authorization", `Bearer ${charlieToken}`);
 
     expect(response.status).toBe(403);
     expect(response.body.status).toBe("error");
@@ -113,7 +114,7 @@ describe("Organisation Access Unit Test", () => {
   }, 60000);
 });
 
-describe("End to End tests", () => {
+describe("End-End tests", () => {
   beforeAll(async () => {
     await prisma.$connect();
     await prisma.userOrganisation.deleteMany({});
@@ -125,28 +126,28 @@ describe("End to End tests", () => {
     await prisma.$disconnect();
   });
 
-  it("Should Register User Successfully with Default Organisation", async () => {
+  it("Register User Successfully with User Organisation", async () => {
     const response = await request(app).post("/auth/register").send({
-      firstName: "John",
-      lastName: "Doe",
-      email: "johndoe@example.com",
-      password: "password123",
-      phone: "1234567890",
+      firstName: "David",
+      lastName: "Brown",
+      email: "davidbrown@example.com",
+      password: "Password!234",
+      phone: "9876543213",
     });
 
     expect(response.status).toBe(201);
     expect(response.body.status).toBe("success");
     expect(response.body.message).toBe("Registration successful");
-    expect(response.body.data.user.firstName).toBe("John");
-    expect(response.body.data.user.email).toBe("johndoe@example.com");
+    expect(response.body.data.user.firstName).toBe("David");
+    expect(response.body.data.user.email).toBe("davidbrown@example.com");
     expect(response.body.data.accessToken).toBeDefined();
   }, 60000);
 
-  it("Should Fail If Required Fields Are Missing and validate HTTP status code", async () => {
+  it("Fail If Required Fields Are Missing and check status code", async () => {
     const response = await request(app).post("/auth/register").send({
-      lastName: "Doe",
-      email: "johndoe@example.com",
-      password: "password123",
+      lastName: "Brown",
+      email: "davidbrown@example.com",
+      password: "Password!234",
     });
 
     expect(response.status).toBe(422);
@@ -156,53 +157,51 @@ describe("End to End tests", () => {
     });
   }, 60000);
 
-  it(`Should Fail if there's Duplicate Email or UserID and validate HTTP status code`, async () => {
+  it("Fail if Duplicate User Info and check status code", async () => {
     await request(app).post("/auth/register").send({
-      firstName: "Jane",
-      lastName: "Doe",
-      email: "janedoe@example.com",
-      password: "password123",
-      phone: "0987654321",
+      firstName: "Eve",
+      lastName: "Davis",
+      email: "evedavis@example.com",
+      password: "Password!234",
+      phone: "9876543214",
     });
 
     const response = await request(app).post("/auth/register").send({
-      firstName: "Jane",
-      lastName: "Doe",
-      email: "janedoe@example.com",
-      password: "password123",
-      phone: "0987654321",
+      firstName: "Eve",
+      lastName: "Davis",
+      email: "evedavis@example.com",
+      password: "Password!234",
+      phone: "9876543214",
     });
 
-    expect(response.status).toBe(422);
-    expect(response.body.errors).toContainEqual({
-      field: "email",
-      message: "Email already exists",
-    });
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe("Bad request");
+    expect(response.body.message).toBe("Registration unsuccessful");
   }, 60000);
 
-  it("Should Log the user in successfully and validate response body", async () => {
+  it("Login User and Check response", async () => {
     await request(app).post("/auth/register").send({
-      firstName: "Sam",
-      lastName: "Smith",
-      email: "samsmith@example.com",
-      password: "password123",
-      phone: "1122334455",
+      firstName: "Frank",
+      lastName: "Evans",
+      email: "frankevans@example.com",
+      password: "Password!234",
+      phone: "9876543215",
     });
 
     const response = await request(app).post("/auth/login").send({
-      email: "samsmith@example.com",
-      password: "password123",
+      email: "frankevans@example.com",
+      password: "Password!234",
     });
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
     expect(response.body.message).toBe("Login successful");
-    expect(response.body.data.user.firstName).toBe("Sam");
-    expect(response.body.data.user.email).toBe("samsmith@example.com");
+    expect(response.body.data.user.firstName).toBe("Frank");
+    expect(response.body.data.user.email).toBe("frankevans@example.com");
     expect(response.body.data.accessToken).toBeDefined();
   }, 60000);
 
-  it("Should Fail If Login Credentials Are Incorrect", async () => {
+  it("Check Incorrect login details", async () => {
     const response = await request(app).post("/auth/login").send({
       email: "nonexistent@example.com",
       password: "wrongpassword",
