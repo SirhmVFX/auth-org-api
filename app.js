@@ -1,19 +1,16 @@
 const express = require("express");
 const bodyParser = require("body-parser");
-const sequelize = require("./config/database");
 const authRoutes = require("./routes/auth");
-const orgRoutes = require("./routes/organisations");
-
+const apiRoutes = require("./routes/api");
+require("dotenv").config();
 const app = express();
 
 app.use(bodyParser.json());
 app.use("/auth", authRoutes);
-app.use("/api/organisations", orgRoutes);
+app.use("/api", apiRoutes);
 
-sequelize.sync().then(() => {
-  app.listen(3000, () => {
-    console.log("Server is running on port 3000");
-  });
+app.listen(process.env.PORT, () => {
+  console.log("Server is running on port 3000");
 });
 
 module.exports = app;

@@ -2,113 +2,176 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { User, Organisation } = require("../models");
-const { userValidationRules, validate } = require("../middleware/validation");
+const prisma = require("../config/prisma");
+const { body, validationResult } = require("express-validator");
 const router = express.Router();
+require("dotenv").config();
+router.post(
+  "/register",
+  [
+    body("firstName").notEmpty().withMessage("First name is required"),
+    body("lastName").notEmpty().withMessage("Last name is required"),
+    body("email").isEmail().withMessage("Invalid email").notEmpty(),
+    body("password")
+      .isLength({ min: 5 })
+      .withMessage("Password must be at least 5 characters long"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (errors.errors.length > 0) {
+      const errArray = errors.errors.map((error) => {
+        const { path, msg } = error;
+        return { path, msg };
+      });
 
-router.post("/register", userValidationRules(), validate, async (req, res) => {
-  try {
-    const { userId, firstName, lastName, email, password, phone } = req.body;
+      if (errArray.length > 0) {
+        const err = errArray.map((error) => ({
+          field: error.path,
+          message: error.msg,
+        }));
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({
-      userId,
-      firstName,
-      lastName,
-      email,
-      password: hashedPassword,
-      phone,
-    });
+        return res.status(422).json({
+          errors: err,
+        });
+      }
+    }
 
-    const org = await Organisation.create({
-      orgId: `${userId}_org`,
-      name: `${firstName}'s Organisation`,
-    });
+    try {
+      const { firstName, lastName, email, password, phone } = req.body;
 
-    await user.addOrganisation(org);
+      const userExists = await prisma.user.findUnique({
+        where: { email },
+      });
 
-    const token = jwt.sign({ userId: user.userId }, "secretKey", {
-      expiresIn: "1h",
-    });
-
-    res.status(201).json({
-      status: "success",
-      message: "Registration successful",
-      data: {
-        accessToken: token,
-        user: {
-          userId: user.userId,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          phone: user.phone,
+      if (userExists) {
+        return res.status(400).json({
+          status: "Bad request",
+          message: "Registration unsuccessful",
+          statusCode: 400,
+        });
+      }
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await prisma.user.create({
+        data: {
+          firstName,
+          lastName,
+          email,
+          password: hashedPassword,
+          phone,
+          organisations: {
+            create: {
+              organisation: {
+                create: {
+                  name: `${firstName}'s Organisation`,
+                  description: "",
+                },
+              },
+            },
+          },
         },
-      },
-    });
-  } catch (err) {
-    res
-      .status(400)
-      .json({
+      });
+
+      const token = jwt.sign({ email: user.email }, process.env.SECRET_KEY, {
+        expiresIn: "1h",
+      });
+
+      res.status(201).json({
+        status: "success",
+        message: "Registration successful",
+        data: {
+          accessToken: token,
+          user: {
+            userId: user.userId,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phone: user.phone,
+          },
+        },
+      });
+    } catch (err) {
+      res.status(400).json({
         status: "Bad request",
         message: "Registration unsuccessful",
         statusCode: 400,
       });
-  }
-});
+    }
+  },
+);
 
-router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+router.post(
+  "/login",
+  [
+    body("email").isEmail().withMessage("Invalid email").notEmpty(),
+    body("password").notEmpty().withMessage("Password is required"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (errors.errors.length > 0) {
+      const errArray = errors.errors.map((error) => {
+        const { path, msg } = error;
+        return { path, msg };
+      });
 
-  try {
-    const user = await User.findOne({ where: { email } });
-    if (!user) {
-      return res
-        .status(401)
-        .json({
+      if (errArray.length > 0) {
+        const err = errArray.map((error) => ({
+          field: error.path,
+          message: error.msg,
+        }));
+
+        return res.status(422).json({
+          errors: err,
+        });
+      }
+    }
+
+    const { email, password } = req.body;
+
+    try {
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (!user) {
+        return res.status(401).json({
           status: "Bad request",
           message: "Authentication failed",
           statusCode: 401,
         });
-    }
+      }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res
-        .status(401)
-        .json({
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(401).json({
           status: "Bad request",
           message: "Authentication failed",
           statusCode: 401,
         });
-    }
+      }
 
-    const token = jwt.sign({ userId: user.userId }, "secretKey", {
-      expiresIn: "1h",
-    });
+      const token = jwt.sign({ email: user.email }, process.env.SECRET_KEY, {
+        expiresIn: "1h",
+      });
 
-    res.status(200).json({
-      status: "success",
-      message: "Login successful",
-      data: {
-        accessToken: token,
-        user: {
-          userId: user.userId,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          phone: user.phone,
+      res.status(200).json({
+        status: "success",
+        message: "Login successful",
+        data: {
+          accessToken: token,
+          user: {
+            userId: user.userId,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phone: user.phone,
+          },
         },
-      },
-    });
-  } catch (err) {
-    res
-      .status(400)
-      .json({
+      });
+    } catch (err) {
+      res.status(400).json({
         status: "Bad request",
         message: "Authentication failed",
         statusCode: 400,
       });
-  }
-});
+    }
+  },
+);
 
 module.exports = router;
