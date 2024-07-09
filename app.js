@@ -6,6 +6,9 @@ require("dotenv").config();
 const app = express();
 
 app.use(bodyParser.json());
+app.get("/", (req, res) => {
+  res.send("HNG backend task");
+});
 app.use("/auth", authRoutes);
 app.use("/api", apiRoutes);
 
